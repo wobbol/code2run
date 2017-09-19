@@ -1,0 +1,19 @@
+# code2run
+
+respond to http POST with compiler error or output.
+url looks like example.com{PREFIX}/{COMPILER}
+returns status page2
+
+@ = you are here
+
+Pipe text from stdin to gcc then printf the results. @
+
+Pipe text from socket to gcc then printf the results.
+
+Make some kind of separator in the stream analogous to EOF.
+
+Become persistent.
+
+Use HTTP POST header.
+
+Return a webpage via HTTP.
