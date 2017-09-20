@@ -1,0 +1,12 @@
+{
+   getaddrinfo doesn't free ipv6 info from /etc/resolv.conf
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   obj:*
+   obj:*
+   obj:*
+   fun:gaih_inet.constprop.7
+   fun:getaddrinfo
+   fun:main
+}
