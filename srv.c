@@ -45,7 +45,7 @@ int main(void)
 
 	int tmp;
 	if((tmp = getaddrinfo(NULL, port, &hints, &servinfo)) != 0){
-		fprintf( stderr, "getaddrinfo: %s\n", gai_strerror(tmp));
+		fprintf( stderr, "server: getaddrinfo: %s\n", gai_strerror(tmp));
 		exit(EXIT_FAILURE);
 	}
 
@@ -56,12 +56,12 @@ int main(void)
 		}
 		
 		if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1){
-			perror("could not set socket for reuse.");
+			perror("server: could not set socket for reuse.");
 			exit(EXIT_FAILURE);
 		}
 		if(bind(sock, p->ai_addr, p->ai_addrlen) == -1){
 			close(sock);
-			perror("bind()");
+			perror("server: bind()");
 			continue;
 		}
 		break;
@@ -70,11 +70,11 @@ int main(void)
 	freeaddrinfo(servinfo);
 
 	if(p == NULL){
-		fprintf(stderr,"No sutable internet connection.\n");
+		fprintf(stderr,"server: No sutable internet connection.\n");
 		exit(EXIT_FAILURE);
 	}
 	if(listen(sock, backlog) == -1){
-		perror("listen()");
+		perror("server: listen()");
 		exit(EXIT_FAILURE);
 	}
 
@@ -83,23 +83,23 @@ int main(void)
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_RESTART;
 	if(sigaction(SIGCHLD, &sa, NULL) == -1){
-		perror("sigaction()");
+		perror("server: sigaction()");
 		exit(EXIT_FAILURE);
 	}
 
 	int conn;
-	printf("waiting for connections.\n");
+	printf("server: waiting for connections.\n");
 	while(1){
 		sin_size = sizeof their_addr;
 		conn = accept(sock, (struct sockaddr *)&their_addr, &sin_size);
 		if(conn == -1){
-			perror("accept()");
+			perror("server: accept()");
 			continue;
 		}
 		char s[INET6_ADDRSTRLEN];
 		inet_ntop(their_addr.ss_family,
 				get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
-		printf("connection from %s\n",s);
+		printf("server: connection from %s\n",s);
 		if(!fork()){
 			close(sock);
 			char *string = "\
@@ -108,7 +108,7 @@ int main(void){puts(\"Hello, World!\"); return 2;}\n";
 			char to_send[256*2+1];
 			snprintf(to_send,256*2,"%s",string);
 			if(send(conn, to_send, strlen(to_send), 0) == -1)
-				perror("send()");
+				perror("server: send()");
 			close(conn);
 			exit(EXIT_SUCCESS);
 		}
