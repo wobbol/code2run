@@ -6,14 +6,17 @@ returns status page2
 
 @ = you are here
 
-Pipe text from stdin to gcc then printf the results. @
+Pipe text from stdin to gcc then printf the results. 
 
-Pipe text from socket to gcc then printf the results.
+--Pipe text from socket to gcc then printf the results.--
 
-Make some kind of separator in the stream analogous to EOF.
+Print tcp data to /tmp send pathname to gcc.
+Stop making debug hard with strange pipe behavior.@
 
 Become persistent.
 
 Use HTTP POST header.
+
+Mess with security. Is there a safer way to swing this blade?
 
 Return a webpage via HTTP.
