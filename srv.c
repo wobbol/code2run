@@ -51,7 +51,7 @@ int main(void)
 
 	for(p = servinfo; p != NULL; p = p->ai_next){
 		if((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1){
-			perror("socket()");
+			perror("server: socket()");
 			continue;
 		}
 		
@@ -102,13 +102,49 @@ int main(void)
 		printf("server: connection from %s\n",s);
 		if(!fork()){
 			close(sock);
-			char *string = "\
-#include <stdio.h>\n\
-int main(void){puts(\"Hello, World!\"); return 2;}\n";
-			char to_send[256*2+1];
-			snprintf(to_send,256*2,"%s",string);
-			if(send(conn, to_send, strlen(to_send), 0) == -1)
+
+const int max_data_size = 100;
+char buf[max_data_size];
+			{ /* gets bits */
+				int numbytes;
+				if ((numbytes = recv(conn, buf, max_data_size-1, 0)) == -1) {
+					perror("server: recv");
+					exit(1);
+
+					buf[numbytes] = '\0';
+				}
+
+				FILE *code = fopen("/dev/shm/code2run/code","w+");
+				fprintf(code,"%s",buf);
+				fclose(code);
+			}
+				pid_t pid;
+				int status;
+			{ /* compile */
+				pid = fork();
+				if(pid == 0){
+					char *gcc_arg[] = {"gcc", "-x","c","/dev/shm/code2run/code", "-o", "totally_unique", (char*)0};
+					execvp(gcc_arg[0],gcc_arg);
+				}
+				wait(&status);
+				//remove("/dev/shm/code2run/code");
+			}
+			{ /* run */
+
+				pid = fork();
+				if(pid == 0){
+					char *danger_arg[] = {"./totally_unique", (char*)0};
+					execvp(danger_arg[0],danger_arg);
+					//remove("./totally_unique");
+				}
+			}
+
+			wait(&status);
+			char to_send[20];
+			snprintf(to_send,20,"%d",WEXITSTATUS(status));
+			if(send(conn, to_send, 20, 0) == -1)
 				perror("server: send()");
+			
 			close(conn);
 			exit(EXIT_SUCCESS);
 		}
