@@ -12,7 +12,7 @@
 #include <arpa/inet.h>
 
 const char *const port = "3490"; // the port client will be connecting to 
-const int max_data_size = 100; // max number of bytes we can get at once 
+const int max_data_size = 100; // TODO: only used for recv buf display all data from the connection in
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 {
 
     if (argc != 2) {
-        fprintf(stderr,"usage: elient hostname\n");
+        fprintf(stderr,"usage: %s: hostname\n", argv[0]);
         exit(1);
     }
 
@@ -86,14 +86,21 @@ int main(void){puts(\"Hello, World!\"); return 2;}\n";
     if(send(sockfd, to_send, strlen(to_send), 0) == -1)
 	    perror("server: send()");
 
+    puts("client: receiving");
+
     char buf[max_data_size];
-    recv(sockfd, buf, 20,0);
-    printf("%s\n",buf);
+    ssize_t tmp = recv(sockfd, buf, 20,0);
+
+    while((tmp > 0) || (errno != EAGAIN)){
+	    printf("%s\n",buf);
+	    tmp = recv(sockfd, buf, 20,0);
+    }
+
+
     close(sockfd);
     exit(EXIT_SUCCESS);
 
     // end here
-    printf("client: received '%s'\n",buf);
 
     close(sockfd);
 
