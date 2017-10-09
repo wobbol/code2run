@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <stdarg.h>
 
 const char *const port = "3490";
 const int backlog = 10;
@@ -28,70 +29,87 @@ void *get_in_addr(struct sockaddr *sa)
 	else
 		return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
+void fail(const char *const fmt, ...){
+	fprintf(stderr,"server: ");
+
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr,fmt,ap);
+	va_end(ap);
+
+	fprintf(stderr,"\n");
+
+	exit(EXIT_FAILURE);
+}
 
 int main(void)
 {
-	int sock;
 
-	struct addrinfo hints, *servinfo, *p;
-	struct sockaddr_storage their_addr;
-	socklen_t sin_size;
-	int yes = 1;
-
+	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE; // use my IP
 
-	int tmp;
-	if((tmp = getaddrinfo(NULL, port, &hints, &servinfo)) != 0){
-		fprintf( stderr, "server: getaddrinfo: %s\n", gai_strerror(tmp));
-		exit(EXIT_FAILURE);
-	}
+	int sockfd;
+	struct sockaddr_storage their_addr;
+	socklen_t sin_size;
+	int yes = 1;
 
-	for(p = servinfo; p != NULL; p = p->ai_next){
-		if((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1){
-			perror("server: socket()");
-			continue;
+
+	struct addrinfo *servinfo;
+
+	{
+		int tmp;
+		if((tmp = getaddrinfo(NULL, port, &hints, &servinfo)) != 0){
+			fail("server: getaddrinfo: %s\n", gai_strerror(tmp));
 		}
-		
-		if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1){
-			perror("server: could not set socket for reuse.");
-			exit(EXIT_FAILURE);
+	}
+	{ /* setup sockfd */
+		struct addrinfo *p;
+		for(p = servinfo; p != NULL; p = p->ai_next){
+			if((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1){
+				perror("server: socket()");
+				continue;
+			}
+
+			if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1)
+				fail("could not set socket for reuse.");
+
+			if(bind(sockfd, p->ai_addr, p->ai_addrlen) == -1){
+				close(sockfd);
+				perror("server: bind()");
+				continue;
+			}
+			break;
 		}
-		if(bind(sock, p->ai_addr, p->ai_addrlen) == -1){
-			close(sock);
-			perror("server: bind()");
-			continue;
-		}
-		break;
+
+		freeaddrinfo(servinfo);
+
+		if(p == NULL)
+			fail("No sutable internet connection.");
+
 	}
 
-	freeaddrinfo(servinfo);
+	if(listen(sockfd, backlog) == -1)
+		fail("listen()");
 
-	if(p == NULL){
-		fprintf(stderr,"server: No sutable internet connection.\n");
-		exit(EXIT_FAILURE);
-	}
-	if(listen(sock, backlog) == -1){
-		perror("server: listen()");
-		exit(EXIT_FAILURE);
-	}
+	{
+		struct sigaction sa;
+		sa.sa_handler = sigchld_handle;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_RESTART;
+		if(sigaction(SIGCHLD, &sa, NULL) == -1)
+			fail("sigaction()");
 
-	struct sigaction sa;
-	sa.sa_handler = sigchld_handle;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_RESTART;
-	if(sigaction(SIGCHLD, &sa, NULL) == -1){
-		perror("server: sigaction()");
-		exit(EXIT_FAILURE);
 	}
 
+	puts("server: waiting for connections.");
 	int conn;
-	printf("server: waiting for connections.\n");
 	while(1){
 		sin_size = sizeof their_addr;
-		conn = accept(sock, (struct sockaddr *)&their_addr, &sin_size);
+		conn = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
 		if(conn == -1){
 			perror("server: accept()");
 			continue;
@@ -101,18 +119,16 @@ int main(void)
 				get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
 		printf("server: connection from %s\n",s);
 		if(!fork()){
-			close(sock);
+			close(sockfd);
 
 const int max_data_size = 100;
 char buf[max_data_size];
 			{ /* gets bits */
 				int numbytes;
-				if ((numbytes = recv(conn, buf, max_data_size-1, 0)) == -1) {
-					perror("server: recv");
-					exit(1);
+				if ((numbytes = recv(conn, buf, max_data_size-1, 0)) == -1)
+					fail("recv");
 
 					buf[numbytes] = '\0';
-				}
 
 				FILE *code = fopen("/dev/shm/code2run/code","w+");
 				fprintf(code,"%s",buf);
