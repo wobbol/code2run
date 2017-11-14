@@ -98,7 +98,7 @@ int main(void){puts(\"Hello, World!\"); return 2;}\n";
     ssize_t tmp = recv(sockfd, buf, 20,0);
 
     while(tmp > 0){
-	    printf("Reply: %s\n", buf);
+	    printf("%s", buf);
 
 	    write_zero(buf, max_data_size);
 	    tmp = recv(sockfd, buf, 20,0);
