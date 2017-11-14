@@ -14,6 +14,12 @@
 const char *const port = "3490"; // the port client will be connecting to 
 const int max_data_size = 100; // TODO: only used for recv buf display all data from the connection in
 
+void write_zero(char *str, int len)
+{
+	for(int i = 0; i < len; ++i)
+		str[i] = 0;
+}
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -84,17 +90,21 @@ int main(void){puts(\"Hello, World!\"); return 2;}\n";
 		    char to_send[256*2+1];
     snprintf(to_send,256*2,"%s",string);
     if(send(sockfd, to_send, strlen(to_send), 0) == -1)
-	    perror("server: send()");
+	    perror("client: send()");
 
     puts("client: receiving");
 
-    char buf[max_data_size];
+    char buf[max_data_size] = {0};
     ssize_t tmp = recv(sockfd, buf, 20,0);
 
-    while((tmp > 0) || (errno != EAGAIN)){
-	    printf("%s\n",buf);
+    while(tmp > 0){
+	    printf("Reply: %s\n", buf);
+
+	    write_zero(buf, max_data_size);
 	    tmp = recv(sockfd, buf, 20,0);
     }
+    if(tmp == -1)
+	    perror("recv final:");
 
 
     close(sockfd);
