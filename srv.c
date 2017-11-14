@@ -9,17 +9,52 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <stdarg.h>
 
 const char *const port = "3490";
 const int backlog = 10;
+const int max_data_size = 100;
+
+void rmtmp(void)
+{
+	if(!remove("/dev/shm/code2run/code"))
+		perror("could not remove source code tmp file");
+	if(!rmdir("/dev/shm/code2run"))
+		perror("could not remove tmpdir");
+}
+
+void fail(const char *const fmt, ...){
+	fprintf(stderr,"server: ");
+
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	fprintf(stderr, "\n");
+
+	rmtmp();
+	exit(EXIT_FAILURE);
+}
 
 void sigchld_handle(int sig)
 {
 	int saved_errno = errno;
 	while(waitpid(-1, NULL, WNOHANG) > 0);
 	errno = saved_errno;
+}
+
+void install_sighandler(void)
+{
+	struct sigaction sa;
+	sa.sa_handler = sigchld_handle;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+	if(sigaction(SIGCHLD, &sa, NULL) == -1)
+		fail("sigaction()");
 }
 
 void *get_in_addr(struct sockaddr *sa)
@@ -29,22 +64,84 @@ void *get_in_addr(struct sockaddr *sa)
 	else
 		return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
-void fail(const char *const fmt, ...){
-	fprintf(stderr,"server: ");
 
-	va_list ap;
+void init_sockfd(struct addrinfo *servinfo, int *sockfd)
+{ /* setup sockfd */
+	int yes = 1;
+	struct addrinfo *p;
+	for(p = servinfo; p != NULL; p = p->ai_next){
+		if((*sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1){
+			perror("server: socket()");
+			continue;
+		}
 
-	va_start(ap, fmt);
-	vfprintf(stderr,fmt,ap);
-	va_end(ap);
+		if(setsockopt(*sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1)
+			fail("could not set socket for reuse.");
 
-	fprintf(stderr,"\n");
+		if(bind(*sockfd, p->ai_addr, p->ai_addrlen) == -1){
+			close(*sockfd);
+			perror("server: bind()");
+			continue;
+		}
+		break;
+	}
 
-	exit(EXIT_FAILURE);
+	freeaddrinfo(servinfo);
+
+	if(p == NULL)
+		fail("No sutable internet connection.");
+}
+
+void get_bits(int conn, char *buf, char *filename)
+{ /* gets bits */
+	int numbytes;
+	if ((numbytes = recv(conn, buf, max_data_size-1, 0)) == -1)
+		fail("recv");
+
+	buf[numbytes] = '\0';
+
+	FILE *code = fopen(filename, "w+");
+	if(!code)
+		perror("get_bits");
+	fprintf(code, "%s", buf);
+	fclose(code);
+}
+
+void compile(char *infile, char *outfile, int cleanup)
+{ /* compile */
+	int status;
+	pid_t pid;
+
+	pid = fork();
+	if(pid == 0){
+		char * gcc_arg[] = {"gcc", "-x", "c", infile, "-o", outfile, (char*)0};
+		execvp(gcc_arg[0], gcc_arg);
+	}
+	wait(&status);
+	if(cleanup)
+		remove(infile);
+}
+
+void run(char *name, int cleanup, int *status)
+{ /* run */
+	pid_t pid;
+
+	pid = fork();
+	if(pid == 0){
+		char *danger_arg[] = {name, (char*)0};
+		execvp(danger_arg[0], danger_arg);
+	}
+
+	wait(status);
+	if(cleanup)
+		remove(name);
 }
 
 int main(void)
 {
+	const char *const tmpdir = "/dev/shm/code2run";
+	if(mkdir(tmpdir, 0755))
+		fail("could not make temp dir.");
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
@@ -57,7 +154,6 @@ int main(void)
 	socklen_t sin_size;
 	int yes = 1;
 
-
 	struct addrinfo *servinfo;
 
 	{
@@ -66,44 +162,12 @@ int main(void)
 			fail("server: getaddrinfo: %s\n", gai_strerror(tmp));
 		}
 	}
-	{ /* setup sockfd */
-		struct addrinfo *p;
-		for(p = servinfo; p != NULL; p = p->ai_next){
-			if((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1){
-				perror("server: socket()");
-				continue;
-			}
-
-			if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1)
-				fail("could not set socket for reuse.");
-
-			if(bind(sockfd, p->ai_addr, p->ai_addrlen) == -1){
-				close(sockfd);
-				perror("server: bind()");
-				continue;
-			}
-			break;
-		}
-
-		freeaddrinfo(servinfo);
-
-		if(p == NULL)
-			fail("No sutable internet connection.");
-
-	}
+	init_sockfd(servinfo, &sockfd);
 
 	if(listen(sockfd, backlog) == -1)
 		fail("listen()");
 
-	{
-		struct sigaction sa;
-		sa.sa_handler = sigchld_handle;
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = SA_RESTART;
-		if(sigaction(SIGCHLD, &sa, NULL) == -1)
-			fail("sigaction()");
-
-	}
+	install_sighandler();
 
 	puts("server: waiting for connections.");
 	int conn;
@@ -117,50 +181,29 @@ int main(void)
 		char s[INET6_ADDRSTRLEN];
 		inet_ntop(their_addr.ss_family,
 				get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
-		printf("server: connection from %s\n",s);
+		printf("server: connection from %s\n", s);
 		if(!fork()){
 			close(sockfd);
 
-const int max_data_size = 100;
-char buf[max_data_size];
-			{ /* gets bits */
-				int numbytes;
-				if ((numbytes = recv(conn, buf, max_data_size-1, 0)) == -1)
-					fail("recv");
+			char buf[max_data_size];
 
-					buf[numbytes] = '\0';
+			get_bits(conn, buf, "/dev/shm/code2run/code");
 
-				FILE *code = fopen("/dev/shm/code2run/code","w+");
-				fprintf(code,"%s",buf);
-				fclose(code);
-			}
-				pid_t pid;
-				int status;
-			{ /* compile */
-				pid = fork();
-				if(pid == 0){
-					char *gcc_arg[] = {"gcc", "-x","c","/dev/shm/code2run/code", "-o", "totally_unique", (char*)0};
-					execvp(gcc_arg[0],gcc_arg);
-				}
-				wait(&status);
-				//remove("/dev/shm/code2run/code");
-			}
-			{ /* run */
+			pid_t pid;
+			int status;
 
-				pid = fork();
-				if(pid == 0){
-					char *danger_arg[] = {"./totally_unique", (char*)0};
-					execvp(danger_arg[0],danger_arg);
-					//remove("./totally_unique");
-				}
-			}
+			compile("/dev/shm/code2run/code", "totally_unique", 1);
+			run("./totally_unique", 1, &status);
+			char exitstatus[6];
+				snprintf(exitstatus, 6, "%d", WEXITSTATUS(status));
+			if(send(conn, exitstatus, 6, 0) == -1)
+				perror("server: send()");
 
-			wait(&status);
+			//for(len of output % 20 until no more)
 			char to_send[20];
-			snprintf(to_send,20,"%d",WEXITSTATUS(status));
 			if(send(conn, to_send, 20, 0) == -1)
 				perror("server: send()");
-			
+
 			close(conn);
 			exit(EXIT_SUCCESS);
 		}
@@ -168,8 +211,3 @@ char buf[max_data_size];
 	}
 	return 0;
 }
-
-
-
-
-
