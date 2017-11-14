@@ -122,19 +122,28 @@ void compile(char *infile, char *outfile, int cleanup)
 		remove(infile);
 }
 
-void run(char *name, int cleanup, int *status)
+int run(char *name, int cleanup, int *status)
 { /* run */
 	pid_t pid;
+	int filedes[2];
+	// 0 read
+	// 1 write
+	if(pipe(filedes))
+		perror("No pipe");
 
 	pid = fork();
 	if(pid == 0){
+		close(filedes[0]);
+		dup2(filedes[1],1);
 		char *danger_arg[] = {name, (char*)0};
 		execvp(danger_arg[0], danger_arg);
 	}
 
+	close(filedes[1]);
 	wait(status);
 	if(cleanup)
 		remove(name);
+	return filedes[0];
 }
 
 int main(void)
@@ -193,15 +202,21 @@ int main(void)
 			int status;
 
 			compile("/dev/shm/code2run/code", "totally_unique", 1);
-			run("./totally_unique", 1, &status);
-			char exitstatus[6];
-				snprintf(exitstatus, 6, "%d", WEXITSTATUS(status));
-			if(send(conn, exitstatus, 6, 0) == -1)
-				perror("server: send()");
+			int fd = run("./totally_unique", 1, &status);
 
-			//for(len of output % 20 until no more)
-			char to_send[20];
-			if(send(conn, to_send, 20, 0) == -1)
+			char ch[256];
+			int re;
+			while((re = read(fd,ch,256)) > 0){
+				if(errno)
+					break;
+			if(send(conn, ch, re, 0) == -1)
+				perror("server: send()");
+			}
+
+			char exitstatus[6] = {0};
+			int el;
+			el = snprintf(exitstatus, 6, "%d", WEXITSTATUS(status));
+			if(send(conn, exitstatus, el, 0) == -1)
 				perror("server: send()");
 
 			close(conn);
