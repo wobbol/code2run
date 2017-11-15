@@ -1,5 +1,15 @@
 # code2run
 
+Compile and run code remotely.
+
+
+code -> client -> network -> server -> gcc -> network -> client
+
+
+## roadmap
+
+end goal:
+
 respond to http POST with compiler error or output.
 url looks like example.com{PREFIX}/{COMPILER}
 returns status page2
@@ -11,10 +21,10 @@ Pipe text from stdin to gcc then printf the results.
 --Pipe text from socket to gcc then printf the results.--
 
 Print tcp data to /tmp send pathname to gcc.
-Stop making debug hard with strange pipe behavior.@
+Stop making debug hard with strange pipe behavior.
 
 Become persistent.
-
+@
 Use HTTP POST header.
 
 Mess with security. Is there a safer way to swing this blade?
