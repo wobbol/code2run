@@ -13,6 +13,7 @@
 
 const char *const port = "3490"; // the port client will be connecting to 
 const int MAX_DATA_LEN = 100; // TODO: only used for recv buf display all data from the connection in
+const char *arg0;
 
 void write_zero(char *str, int len)
 {
@@ -54,6 +55,15 @@ void setup_sock(struct addrinfo *p, int *sockfd)
 	printf("client: connecting to %s\n", s);
 }
 
+void setup_addrinfo(struct addrinfo **servinfo, struct addrinfo *hints, const char *const ip)
+{
+    int rv;
+    if ((rv = getaddrinfo(ip, port, hints, servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        exit(1);
+    }
+}
+
 void recv_print(int fd)
 {
 	char buf[MAX_DATA_LEN];
@@ -67,13 +77,17 @@ void recv_print(int fd)
 	if(bytes == -1)
 		perror("recv final:");
 }
+void usage(void)
+{
+	fprintf(stderr,"usage: %s: hostname\n", argv0);
+	exit(1);
+}
 
 int main(int argc, char *argv[])
 {
-
+    arg0 = argv[0];
     if (argc != 2) {
-        fprintf(stderr,"usage: %s: hostname\n", argv[0]);
-        exit(1);
+	    usage();
     }
 
     struct addrinfo hints;
@@ -81,12 +95,8 @@ int main(int argc, char *argv[])
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    int rv;
     struct addrinfo *servinfo;
-    if ((rv = getaddrinfo(argv[1], port, &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
-    }
+    setup_addrinfo(&servinfo, &hints, argv[1]);
 
     int sockfd;  
 
