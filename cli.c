@@ -54,7 +54,19 @@ void setup_sock(struct addrinfo *p, int *sockfd)
 	printf("client: connecting to %s\n", s);
 }
 
-void better_name(char *buf);
+void recv_print(int fd)
+{
+	char buf[MAX_DATA_LEN];
+	int bytes;
+	while(1){
+		bytes = recv(fd, buf, MAX_DATA_LEN, 0);
+		if(bytes <= 0)
+			break;
+		printf("%.*s", bytes, buf);
+	}
+	if(bytes == -1)
+		perror("recv final:");
+}
 
 int main(int argc, char *argv[])
 {
@@ -90,16 +102,7 @@ int main(int argc, char *argv[])
 	    perror("client: send()");
 
     puts("client: receiving");
-
-    ssize_t bytes_written = recv(sockfd, buf, MAX_DATA_LEN, 0);
-
-
-    while(bytes_written > 0){
-	    printf("%.*s", MAX_DATA_LEN, buf);
-	    bytes_written = recv(sockfd, buf, MAX_DATA_LEN, 0);
-    }
-    if(bytes_written == -1)
-	    perror("recv final:");
+    recv_print(sockfd);
 
 
     close(sockfd);
