@@ -12,7 +12,7 @@
 #include <arpa/inet.h>
 
 const char *const port = "3490"; // the port client will be connecting to 
-const int max_data_size = 100; // TODO: only used for recv buf display all data from the connection in
+const int MAX_DATA_LEN = 100; // TODO: only used for recv buf display all data from the connection in
 
 void write_zero(char *str, int len)
 {
@@ -28,6 +28,30 @@ void *get_in_addr(struct sockaddr *sa)
     }
 
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
+
+// loop through all the results and connect to the first we can
+void setup_sock(struct addrinfo *p, int *sockfd)
+{
+	for(; p != NULL; p = p->ai_next) {
+		if (-1 == (*sockfd = socket( p->ai_family, p->ai_socktype, p->ai_protocol))) {
+			perror("client: socket");
+			continue;
+		}
+		if (-1 == connect(*sockfd, p->ai_addr, p->ai_addrlen)) {
+			close(*sockfd);
+			perror("client: connect");
+			continue;
+		}
+		break;
+	}
+	if (p == NULL) {
+		fprintf(stderr, "client: failed to connect\n");
+		exit(2);
+	}
+	char s[INET6_ADDRSTRLEN];
+	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s, sizeof s);
+	printf("client: connecting to %s\n", s);
 }
 
 void better_name(char *buf);
@@ -52,58 +76,29 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    struct addrinfo *p;
     int sockfd;  
-    // loop through all the results and connect to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            perror("client: socket");
-            continue;
-        }
 
-        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            perror("client: connect");
-            continue;
-        }
-
-        break;
-    }
-
-    if (p == NULL) {
-        fprintf(stderr, "client: failed to connect\n");
-        return 2;
-    }
-
-    char s[INET6_ADDRSTRLEN];
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
-            s, sizeof s);
-    printf("client: connecting to %s\n", s);
-
+    setup_sock(servinfo, &sockfd);
     freeaddrinfo(servinfo); // all done with this structure
  
 
-    char *string = "\
-#include <stdio.h>\n\
-int main(void){puts(\"Hello, World!\"); return 2;}\n";
-		    char to_send[256*2+1];
-    snprintf(to_send,256*2,"%s",string);
-    if(send(sockfd, to_send, strlen(to_send), 0) == -1)
+    char buf[MAX_DATA_LEN];
+    char *hello = "#include <stdio.h>\nint main(void){puts(\"Hello, World!\"); return 2;}\n";
+
+    snprintf(buf, MAX_DATA_LEN, "%s", hello);
+    if(send(sockfd, buf, strlen(buf), 0) == -1)
 	    perror("client: send()");
 
     puts("client: receiving");
 
-    char buf[max_data_size] = {0};
-    ssize_t tmp = recv(sockfd, buf, 20,0);
+    ssize_t bytes_written = recv(sockfd, buf, MAX_DATA_LEN, 0);
 
-    while(tmp > 0){
-	    printf("%s", buf);
 
-	    write_zero(buf, max_data_size);
-	    tmp = recv(sockfd, buf, 20,0);
+    while(bytes_written > 0){
+	    printf("%.*s", MAX_DATA_LEN, buf);
+	    bytes_written = recv(sockfd, buf, MAX_DATA_LEN, 0);
     }
-    if(tmp == -1)
+    if(bytes_written == -1)
 	    perror("recv final:");
 
 
